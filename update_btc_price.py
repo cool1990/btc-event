@@ -9,7 +9,7 @@ from pathlib import Path
 
 DATA_FILE = Path(__file__).parent / "btc_price_data.json"
 API_URL = (
-    "https://api.binance.com/api/v3/klines"
+    "https://data-api.binance.vision/api/v3/klines"
     "?symbol=BTCUSDT&interval=1d&limit=5"
 )
 
