@@ -634,16 +634,26 @@ waitEcharts(() => {
     window._dates = dates;
 
     chart.on('click', (p) => {
-      if (p.seriesType !== 'candlestick' || p.dataIndex == null) return;
-      const idx = p.dataIndex;
-      if (idx < 1) return;
+      let idx = null;
+
+      if (p.seriesType === 'scatter' && p.seriesName === '标注' && p.data != null) {
+        // 点击红/绿标记点：从 value[0] 取日期字符串反查索引
+        const date = Array.isArray(p.data.value) ? p.data.value[0] : p.data.value;
+        idx = dates.indexOf(date);
+      } else if (p.seriesType === 'candlestick' && p.dataIndex != null) {
+        // 点击 K 线柱，仅当满足涨跌幅过滤条件时展示
+        const i = p.dataIndex;
+        if (i < 1) return;
+        const dp0 = pct(PRICE[i - 1].close, PRICE[i].close);
+        const { upOn, dnOn, up, dn } = getState();
+        if (!(upOn && up !== null && dp0 >= up) && !(dnOn && dn !== null && dp0 <= -dn)) return;
+        idx = i;
+      }
+
+      if (idx == null || idx < 1) return;
       const c = PRICE[idx];
       const prev = PRICE[idx - 1];
       const dp = pct(prev.close, c.close);
-      const { upOn, dnOn, up, dn } = getState();
-      const hitUp = upOn && up !== null && dp >= up;
-      const hitDn = dnOn && dn !== null && dp <= -dn;
-      if (!hitUp && !hitDn) return;
       showPanel(dates[idx], c, prev, dp);
     });
 
