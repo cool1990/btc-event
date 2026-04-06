@@ -146,6 +146,27 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--sans);height:10
 }
 .pe-empty-icon{font-size:14px;opacity:.3;flex-shrink:0}
 .pe-empty p{font-size:11px;color:var(--t3);line-height:1.6}
+
+/* ── 指标下拉 ── */
+.ind-wrap{position:relative;display:inline-flex}
+.ind-dropdown{
+  display:none;position:absolute;top:calc(100% + 6px);left:0;
+  background:var(--s2);border:1px solid var(--b2);
+  border-radius:9px;padding:6px 0;z-index:200;
+  min-width:176px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+.ind-dropdown.open{display:block}
+.ind-item{
+  display:flex;align-items:center;gap:9px;
+  padding:8px 14px;cursor:pointer;font-size:12px;color:var(--t2);
+  transition:background .12s,color .12s;user-select:none;
+}
+.ind-item:hover{background:var(--s3);color:var(--tx)}
+.ind-item.ind-checked{color:var(--tx)}
+.ind-checkmark{width:14px;font-size:11px;color:var(--or);opacity:0;flex-shrink:0}
+.ind-item.ind-checked .ind-checkmark{opacity:1}
+.ind-dot2{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.ind-sep{height:1px;background:var(--b1);margin:4px 0}
 </style>
 </head>
 <body>
@@ -209,6 +230,40 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--sans);height:10
       <input class="date-inp" type="date" id="rangeTo">
       <button class="rbtn" onclick="applyCustomRange()">确定</button>
     </div>
+    <!-- 指标下拉 -->
+    <div class="ind-wrap" id="indWrap">
+      <button class="rbtn" id="indBtn" onclick="toggleIndDropdown(event)" style="display:flex;align-items:center;gap:5px">
+        指标 <span style="font-size:9px;opacity:.7">▾</span>
+      </button>
+      <div class="ind-dropdown" id="indDropdown">
+        <div class="ind-item ind-checked" data-key="rsi" onclick="toggleIndicator('rsi')">
+          <span class="ind-checkmark">✓</span>
+          <span class="ind-dot2" style="background:#818cf8"></span>
+          RSI(14)
+        </div>
+        <div class="ind-item ind-checked" data-key="fng" onclick="toggleIndicator('fng')">
+          <span class="ind-checkmark">✓</span>
+          <span class="ind-dot2" style="background:#f472b6"></span>
+          恐惧贪婪
+        </div>
+        <div class="ind-sep"></div>
+        <div class="ind-item" data-key="cpi" onclick="toggleIndicator('cpi')">
+          <span class="ind-checkmark">✓</span>
+          <span class="ind-dot2" style="background:#fb923c"></span>
+          CPI (YoY%)
+        </div>
+        <div class="ind-item" data-key="ffr" onclick="toggleIndicator('ffr')">
+          <span class="ind-checkmark">✓</span>
+          <span class="ind-dot2" style="background:#34d399"></span>
+          联邦基金利率
+        </div>
+        <div class="ind-item" data-key="reserves" onclick="toggleIndicator('reserves')">
+          <span class="ind-checkmark">✓</span>
+          <span class="ind-dot2" style="background:#60a5fa"></span>
+          银行存款准备金
+        </div>
+      </div>
+    </div>
     <div class="leg">
       <div class="li"><div class="ld" style="background:var(--gr)"></div>大涨</div>
       <div class="li"><div class="ld" style="background:var(--rd)"></div>大跌</div>
@@ -240,7 +295,6 @@ function tsToDate(ts){
   const d=new Date(ts*1000);
   return d.getUTCFullYear()+'-'+('0'+(d.getUTCMonth()+1)).slice(-2)+'-'+('0'+d.getUTCDate()).slice(-2);
 }
-
 const EVENT_MAP = {};
 
 function parseTimeToUnix(t) {
@@ -249,53 +303,35 @@ function parseTimeToUnix(t) {
   const ms = Date.parse(s.length === 10 ? s + 'T00:00:00Z' : s);
   return Math.floor(ms / 1000);
 }
-
 function normalizePriceRows(rows) {
-  return rows
-    .map((r) => ({
-      time: parseTimeToUnix(r.time),
-      open: +r.open,
-      high: +r.high,
-      low: +r.low,
-      close: +r.close,
-      volume: +r.volume,
-    }))
-    .sort((a, b) => a.time - b.time);
+  return rows.map((r) => ({
+    time: parseTimeToUnix(r.time), open:+r.open, high:+r.high, low:+r.low, close:+r.close, volume:+r.volume,
+  })).sort((a,b)=>a.time-b.time);
 }
 
 async function loadData() {
-  const [priceRes, eventsRes] = await Promise.all([
-    fetch('btc_price_data.json'),
-    fetch('btc_events.json'),
-  ]);
+  const [priceRes, eventsRes] = await Promise.all([fetch('btc_price_data.json'), fetch('btc_events.json')]);
   if (!priceRes.ok) throw new Error('btc_price_data.json HTTP ' + priceRes.status);
   if (!eventsRes.ok) throw new Error('btc_events.json HTTP ' + eventsRes.status);
-  const priceRaw = await priceRes.json();
-  const eventsRaw = await eventsRes.json();
-  PRICE = normalizePriceRows(priceRaw);
-  EVENTS = eventsRaw;
+  PRICE = normalizePriceRows(await priceRes.json());
+  EVENTS = await eventsRes.json();
   for (const k in EVENT_MAP) delete EVENT_MAP[k];
   EVENTS.forEach((ev) => { EVENT_MAP[ev.date] = ev; });
   const last = PRICE[PRICE.length - 1];
   document.getElementById('s-last').textContent = '$' + fmt(last.close);
   document.getElementById('s-high').textContent = '$' + fmt(Math.max(...PRICE.map((c) => c.high)));
-  document.getElementById('s-low').textContent = '$' + fmt(Math.min(...PRICE.map((c) => c.low)));
+  document.getElementById('s-low').textContent  = '$' + fmt(Math.min(...PRICE.map((c) => c.low)));
   const chg = pct(PRICE[0].close, last.close);
   document.getElementById('s-chg').textContent = (chg > 0 ? '+' : '') + chg.toFixed(1) + '%';
 }
 
-
-// ── filter state ─────────────────────────────────────────────────
+// ── filter state ──────────────────────────────────────────────
 function getState(){
   const uRaw=document.getElementById('upVal').value.trim();
   const dRaw=document.getElementById('dnVal').value.trim();
   const u=parseFloat(uRaw), d=parseFloat(dRaw);
-  return {
-    upOn: uRaw!==''&&!isNaN(u)&&u>0,
-    dnOn: dRaw!==''&&!isNaN(d)&&d>0,
-    up:   (!isNaN(u)&&u>0)?u:null,
-    dn:   (!isNaN(d)&&d>0)?d:null,
-  };
+  return { upOn:uRaw!==''&&!isNaN(u)&&u>0, dnOn:dRaw!==''&&!isNaN(d)&&d>0,
+           up:(!isNaN(u)&&u>0)?u:null, dn:(!isNaN(d)&&d>0)?d:null };
 }
 function refreshStyle(){
   const {upOn,dnOn}=getState();
@@ -306,13 +342,11 @@ function onInputChange(){ refreshStyle(); }
 function toggleDir(dir){
   const id=dir==='up'?'upVal':'dnVal';
   const inp=document.getElementById(id);
-  if(inp.value.trim()===''||parseFloat(inp.value)<=0) inp.value='5';
-  else inp.value='';
+  if(inp.value.trim()===''||parseFloat(inp.value)<=0) inp.value='5'; else inp.value='';
   refreshStyle(); applyFilter();
 }
 
-// ── 指标计算 & ECharts ─────────────────────────────────────────
-/** N 日简单移动平均线（收盘价），前 N-1 根为 null */
+// ── 指标计算 ─────────────────────────────────────────────────
 function sma(values, period) {
   const out = new Array(values.length).fill(null);
   if (period <= 0 || values.length < period) return out;
@@ -324,103 +358,142 @@ function sma(values, period) {
   }
   return out;
 }
-
-/** Wilder RSI（默认周期 14），前 period 根为 null */
 function rsiWilder(closes, period) {
-  const n = closes.length;
-  const out = new Array(n).fill(null);
+  const n = closes.length, out = new Array(n).fill(null);
   if (n < period + 1) return out;
-  let avgG = 0;
-  let avgL = 0;
+  let avgG = 0, avgL = 0;
   for (let i = 1; i <= period; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) avgG += d;
-    else avgL -= d;
+    const d = closes[i] - closes[i-1];
+    if (d >= 0) avgG += d; else avgL -= d;
   }
-  avgG /= period;
-  avgL /= period;
-  const rs0 = avgL === 0 ? Infinity : avgG / avgL;
-  out[period] = 100 - 100 / (1 + rs0);
+  avgG /= period; avgL /= period;
+  out[period] = 100 - 100 / (1 + (avgL === 0 ? Infinity : avgG / avgL));
   for (let i = period + 1; i < n; i++) {
-    const d = closes[i] - closes[i - 1];
-    const g = d > 0 ? d : 0;
-    const l = d < 0 ? -d : 0;
-    avgG = (avgG * (period - 1) + g) / period;
-    avgL = (avgL * (period - 1) + l) / period;
-    const rs = avgL === 0 ? Infinity : avgG / avgL;
-    out[i] = 100 - 100 / (1 + rs);
+    const d = closes[i] - closes[i-1];
+    avgG = (avgG*(period-1) + (d>0?d:0)) / period;
+    avgL = (avgL*(period-1) + (d<0?-d:0)) / period;
+    out[i] = 100 - 100 / (1 + (avgL===0 ? Infinity : avgG/avgL));
   }
   return out;
 }
 
+// ── 宏观数据（FRED / Alternative.me）────────────────────────
 async function fetchFearGreedByDate() {
   const map = Object.create(null);
   try {
     const r = await fetch('https://api.alternative.me/fng/?limit=4000');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
-    for (const row of j.data) {
-      const ts = parseInt(row.timestamp, 10);
-      map[tsToDate(ts)] = +row.value;
-    }
-  } catch (e) {
-    console.warn('恐惧与贪婪指数拉取失败（副图将留空）', e);
-  }
+    for (const row of j.data) map[tsToDate(parseInt(row.timestamp,10))] = +row.value;
+  } catch(e){ console.warn('恐惧贪婪指数拉取失败', e); }
   return map;
+}
+
+// 从 FRED 通用 observations 接口抓数据，返回 {date:value} map
+async function fetchFredSeries(seriesId) {
+  const map = Object.create(null);
+  // FRED 开放 API（无需 key）：仅通过公开 JSON endpoint
+  const url = `https://fred.stlouisfed.org/graph/fredgraph.json?id=${seriesId}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rows = await r.json(); // [{date, value}, ...]
+    for (const row of rows) {
+      if (row.value !== '.' && row.value != null) map[row.date] = parseFloat(row.value);
+    }
+  } catch(e){ console.warn(`FRED ${seriesId} 拉取失败`, e); }
+  return map;
+}
+
+// 将月度/不规则宏观数据填充到日线 dates 数组（前向填充）
+function forwardFill(dates, mapByDate) {
+  const out = new Array(dates.length).fill(null);
+  let last = null;
+  for (let i = 0; i < dates.length; i++) {
+    if (mapByDate[dates[i]] != null) last = mapByDate[dates[i]];
+    out[i] = last;
+  }
+  return out;
+}
+
+// ── 指标开关状态 ──────────────────────────────────────────────
+const IND_STATE = { rsi: true, fng: true, cpi: false, ffr: false, reserves: false };
+
+// 已加载的宏观数据缓存
+const IND_DATA = {};
+
+function toggleIndDropdown(e) {
+  e.stopPropagation();
+  document.getElementById('indDropdown').classList.toggle('open');
+}
+document.addEventListener('click', () => {
+  document.getElementById('indDropdown').classList.remove('open');
+});
+
+function toggleIndicator(key) {
+  IND_STATE[key] = !IND_STATE[key];
+  const el = document.querySelector(`.ind-item[data-key="${key}"]`);
+  if (el) el.classList.toggle('ind-checked', IND_STATE[key]);
+  if (window._rebuildSubCharts) window._rebuildSubCharts();
 }
 
 function waitEcharts(cb, n) {
   n = n || 0;
-  if (typeof echarts !== 'undefined') {
-    cb();
-    return;
-  }
+  if (typeof echarts !== 'undefined') { cb(); return; }
   if (n > 80) return;
-  setTimeout(() => waitEcharts(cb, n + 1), 100);
+  setTimeout(() => waitEcharts(cb, n+1), 100);
 }
 
+// ── 主逻辑 ───────────────────────────────────────────────────
 loadData().then(() => {
 waitEcharts(() => {
   const chartEl = document.getElementById('main-chart');
   const chart = echarts.init(chartEl, null, { renderer: 'canvas' });
 
-  const dates = PRICE.map((c) => tsToDate(c.time));
-  const ohlc = PRICE.map((c) => [c.open, c.close, c.low, c.high]);
+  const dates  = PRICE.map((c) => tsToDate(c.time));
+  const ohlc   = PRICE.map((c) => [c.open, c.close, c.low, c.high]);
   const closes = PRICE.map((c) => c.close);
-  const ma365 = sma(closes, 365);
-  const rsi14 = rsiWilder(closes, 14);
+  const ma365  = sma(closes, 365);
+  const rsi14  = rsiWilder(closes, 14);
 
-  const axisLbl = { color: '#64748b', fontSize: 10 };
-  const xAxis = [0, 1, 2].map((gi, idx) => ({
-    type: 'category',
-    gridIndex: gi,
-    data: dates,
-    boundaryGap: true,
-    axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
-    axisTick: { show: false },
-    splitLine: { show: false },
-    axisLabel: Object.assign({}, axisLbl, { show: idx === 2 }),
-    axisPointer: { show: true },
-  }));
+  // 宏观数据异步加载（首次用到时再拉，之后复用缓存）
+  async function ensureMacro(key) {
+    if (IND_DATA[key]) return;
+    if (key === 'fng')      IND_DATA.fng      = await fetchFearGreedByDate();
+    if (key === 'cpi')      IND_DATA.cpi      = await fetchFredSeries('CPIAUCSL');  // CPI YoY %
+    if (key === 'ffr')      IND_DATA.ffr      = await fetchFredSeries('FEDFUNDS');  // Fed Funds Rate
+    if (key === 'reserves') IND_DATA.reserves = await fetchFredSeries('TOTRESNS');  // Total Reserves $bn
+  }
+
+  // 预加载默认开启的
+  Promise.all([ensureMacro('rsi'), ensureMacro('fng')]).then(() => rebuildSubCharts());
+
+  // ── 计算副图布局 ─────────────────────────────────────────
+  // 副图指标：rsi 固定用 0-100，其余各自 y 轴
+  const SUB_DEFS = [
+    { key:'rsi',      label:'RSI(14)',    color:'#818cf8', yMin:0, yMax:100, markLines:[30,70] },
+    { key:'fng',      label:'恐惧贪婪',  color:'#f472b6', yMin:0, yMax:100, area:true },
+    { key:'cpi',      label:'CPI(YoY%)', color:'#fb923c', yMin:null, yMax:null },
+    { key:'ffr',      label:'联邦基金利率%', color:'#34d399', yMin:0, yMax:null },
+    { key:'reserves', label:'银行准备金(十亿$)', color:'#60a5fa', yMin:0, yMax:null },
+  ];
+
+  function getActiveSubs() {
+    return SUB_DEFS.filter(d => IND_STATE[d.key]);
+  }
 
   function buildMarkerData() {
     const { upOn, dnOn, up, dn } = getState();
-    const pts = [];
-    if (!upOn && !dnOn) return { pts, cnt: 0 };
-    let cnt = 0;
+    const pts = []; let cnt = 0;
+    if (!upOn && !dnOn) return { pts, cnt };
     for (let i = 1; i < PRICE.length; i++) {
-      const c = PRICE[i];
-      const prev = PRICE[i - 1];
+      const c = PRICE[i], prev = PRICE[i-1];
       const dp = pct(prev.close, c.close);
       const hitUp = upOn && up !== null && dp >= up;
       const hitDn = dnOn && dn !== null && dp <= -dn;
       if (!hitUp && !hitDn) continue;
       cnt++;
-      pts.push({
-        value: [dates[i], c.high * 1.012],
-        itemStyle: { color: hitUp ? '#22c55e' : '#ef4444' },
-        symbolSize: 8,
-      });
+      pts.push({ value:[dates[i], c.high*1.012], itemStyle:{color:hitUp?'#22c55e':'#ef4444'}, symbolSize:8 });
     }
     return { pts, cnt };
   }
@@ -429,269 +502,210 @@ waitEcharts(() => {
     const { pts, cnt } = buildMarkerData();
     document.getElementById('s-cnt').textContent = cnt + ' 天';
     document.getElementById('cntBadge').textContent = cnt + ' 个标注';
-    chart.setOption({ series: [{}, {}, { data: pts }] }, false, true);
+    // 标注 series 始终是 index=2（K线=0, MA365=1, 标注=2，副图从3开始）
+    chart.setOption({ series: [{},{},{ data: pts }] }, false, true);
   }
   window._buildMarkers = buildMarkers;
 
-  function showPanel(date,c,prev,dp){
-    const isUp=dp>0;
-    const sign=dp>=0?'+':'';
-    const col=isUp?'var(--gr)':'var(--rd)';
-    const absDp=Math.abs(dp);
+  // ── 重新构建副图 ─────────────────────────────────────────
+  async function rebuildSubCharts() {
+    const active = getActiveSubs();
 
-    // 收盘价变化（绝对值）
-    const absChg=Math.abs(c.close-prev.close);
+    // 确保数据已加载
+    await Promise.all(active.map(d => ensureMacro(d.key)));
 
-    // 近7日范围
-    const idx=PRICE.findIndex(x=>x.time===c.time);
-    const w=PRICE.slice(Math.max(0,idx-6),idx+1);
-    const wH=Math.max(...w.map(x=>x.high));
-    const wL=Math.min(...w.map(x=>x.low));
+    // 计算高度布局
+    const mainTop = 10, mainH = active.length === 0 ? 70 : 50;
+    const subH = active.length > 0 ? Math.floor(30 / active.length) : 0;
+    // 副图间距
+    const gap = 1.5;
+    let cursor = mainTop + mainH + 2;
+
+    const grids   = [{ left:52, right:52, top: mainTop+'%', height: mainH+'%' }];
+    const xAxes   = [];
+    const yAxes   = [{ gridIndex:0, scale:true, splitLine:{lineStyle:{color:'rgba(255,255,255,0.05)'}}, axisLabel:{color:'#64748b',fontSize:10} }];
+    const series  = [
+      { name:'K线', type:'candlestick', xAxisIndex:0, yAxisIndex:0, data:ohlc,
+        itemStyle:{color:'#26a69a',color0:'#ef5350',borderColor:'#26a69a',borderColor0:'#ef5350'} },
+      { name:'MA365', type:'line', xAxisIndex:0, yAxisIndex:0, data:ma365,
+        showSymbol:false, lineStyle:{width:1.4,color:'#f7931a'}, connectNulls:false },
+      { name:'标注', type:'scatter', xAxisIndex:0, yAxisIndex:0, data:[], z:10 },
+    ];
+
+    const allXIdx = [0];
+
+    active.forEach((def, i) => {
+      const gi = i + 1;
+      const isLast = i === active.length - 1;
+      grids.push({ left:52, right:52, top: cursor+'%', height: (subH - gap)+'%' });
+      cursor += subH;
+      allXIdx.push(gi);
+
+      yAxes.push({
+        gridIndex: gi,
+        min: def.yMin, max: def.yMax,
+        splitLine: { lineStyle:{color:'rgba(255,255,255,0.05)'} },
+        axisLabel: { color:'#64748b', fontSize:10 },
+        name: def.label,
+        nameTextStyle: { color:'#64748b', fontSize:9 },
+        nameLocation: 'end',
+      });
+
+      // 获取数据
+      let seriesData;
+      if (def.key === 'rsi') {
+        seriesData = rsi14;
+      } else {
+        const raw = IND_DATA[def.key] || {};
+        // CPI：计算 YoY%（当月 vs 12个月前）
+        if (def.key === 'cpi') {
+          const monthly = {};
+          for (const [d, v] of Object.entries(raw)) monthly[d] = v;
+          const cpiFilled = forwardFill(dates, monthly);
+          seriesData = cpiFilled.map((v, i) => {
+            if (v == null || i < 365) return null;
+            const prev = cpiFilled[i - 365];
+            return prev ? +((v - prev) / prev * 100).toFixed(2) : null;
+          });
+        } else {
+          seriesData = forwardFill(dates, raw);
+        }
+      }
+
+      const s = {
+        name: def.label, type:'line', xAxisIndex: gi, yAxisIndex: gi,
+        data: seriesData, showSymbol: false,
+        lineStyle: { width:1.2, color:def.color },
+        connectNulls: true,
+      };
+      if (def.area) s.areaStyle = { color: def.color.replace(')', ',0.12)').replace('rgb','rgba') };
+      if (def.markLines) {
+        s.markLine = { silent:true, symbol:'none',
+          lineStyle:{type:'dashed',color:'rgba(255,255,255,0.15)'},
+          data: def.markLines.map(y => ({yAxis:y})) };
+      }
+      series.push(s);
+    });
+
+    // x 轴：每个 grid 一个，最后一个显示标签
+    for (let i = 0; i <= active.length; i++) {
+      xAxes.push({
+        type:'category', gridIndex:i, data:dates, boundaryGap:true,
+        axisLine:{lineStyle:{color:'rgba(255,255,255,0.1)'}},
+        axisTick:{show:false}, splitLine:{show:false},
+        axisLabel:{color:'#64748b',fontSize:10, show: i===active.length},
+        axisPointer:{show:true},
+      });
+    }
+
+    const option = {
+      backgroundColor:'#161b27',
+      animation:false,
+      legend:{
+        top:4, left:48,
+        textStyle:{color:'#94a3b8',fontSize:11},
+        data:['K线','MA365', ...active.map(d=>d.label)],
+      },
+      axisPointer:{
+        link:[{ xAxisIndex: allXIdx }],
+        label:{backgroundColor:'#2a3347'},
+      },
+      grid: grids,
+      xAxis: xAxes,
+      yAxis: yAxes,
+      dataZoom:[
+        { type:'inside', xAxisIndex:allXIdx, start:72, end:100 },
+        { type:'slider', xAxisIndex:allXIdx, bottom:6, height:18,
+          borderColor:'rgba(255,255,255,0.08)', fillerColor:'rgba(247,147,26,0.15)',
+          handleStyle:{color:'#f7931a'}, textStyle:{color:'#64748b',fontSize:10} },
+      ],
+      series,
+    };
+
+    chart.setOption(option, true);
+    buildMarkers();
+  }
+
+  window._rebuildSubCharts = rebuildSubCharts;
+
+  // ── 侧栏 ─────────────────────────────────────────────────
+  function showPanel(date, c, prev, dp){
+    const isUp=dp>0, sign=dp>=0?'+':'', col=isUp?'var(--gr)':'var(--rd)';
     const volChg=prev.volume>0?pct(prev.volume,c.volume):0;
-
-    // 事件
     const ev=EVENT_MAP[date];
     let eventHtml='';
     if(ev){
       const lbl={bullish:'利多',bearish:'利空',neutral:'中性'}[ev.type]||'';
-      eventHtml=`
-      <div class="pe-card ${ev.type}">
-        <span class="pe-cat">${ev.category}　${lbl}</span>
-        <div class="pe-title">${ev.title}</div>
-        <div class="pe-body">${ev.content}</div>
-      </div>`;
+      eventHtml=`<div class="pe-card ${ev.type}"><span class="pe-cat">${ev.category}　${lbl}</span>
+        <div class="pe-title">${ev.title}</div><div class="pe-body">${ev.content}</div></div>`;
     } else {
-      eventHtml=`
-      <div class="pe-empty">
-        <div class="pe-empty-icon">○</div>
-        <p>暂无事件记录<br>可在 btc_events.json 中补充</p>
-      </div>`;
+      eventHtml=`<div class="pe-empty"><div class="pe-empty-icon">○</div>
+        <p>暂无事件记录<br>可在 btc_events.json 中补充</p></div>`;
     }
-
     document.getElementById('panel').innerHTML=`
     <div class="pc">
-
-      <!-- 顶部：日期 + 涨跌幅 -->
       <div class="pc-head">
-        <div class="pc-meta">
-          <span class="pc-date">${date}</span>
-          <span class="pc-dir ${isUp?'up':'dn'}">${isUp?'大涨':'大跌'}</span>
-        </div>
+        <div class="pc-meta"><span class="pc-date">${date}</span>
+          <span class="pc-dir ${isUp?'up':'dn'}">${isUp?'大涨':'大跌'}</span></div>
         <div class="pc-pct" style="color:${col}">${sign}${dp.toFixed(2)}%</div>
         <div class="pc-abs" style="color:${col}">$${fmt(prev.close)} → $${fmt(c.close)}</div>
       </div>
-
-      <!-- 成交量 -->
       <div class="pc-vol">
-        <div class="oc">
-          <div class="oc-l">成交量</div>
-          <div class="oc-v">${fmtV(c.volume)} BTC</div>
-        </div>
-        <div class="oc">
-          <div class="oc-l">量变化</div>
-          <div class="oc-v" style="color:${volChg>=0?'var(--gr)':'var(--rd)'}">${volChg>=0?'+':''}${volChg.toFixed(1)}%</div>
-        </div>
+        <div class="oc"><div class="oc-l">成交量</div><div class="oc-v">${fmtV(c.volume)} BTC</div></div>
+        <div class="oc"><div class="oc-l">量变化</div>
+          <div class="oc-v" style="color:${volChg>=0?'var(--gr)':'var(--rd)'}">${volChg>=0?'+':''}${volChg.toFixed(1)}%</div></div>
       </div>
-
-      <!-- 事件区 -->
-      <div class="pc-event">
-        <div class="pe-label">大事件</div>
-        ${eventHtml}
-      </div>
-
+      <div class="pc-event"><div class="pe-label">大事件</div>${eventHtml}</div>
     </div>`;
   }
 
-
-  fetchFearGreedByDate().then((fngMap) => {
-    const fngSeries = dates.map((d) => (fngMap[d] != null ? fngMap[d] : null));
-
-    const option = {
-      backgroundColor: '#161b27',
-      animation: false,
-      legend: {
-        top: 4,
-        left: 48,
-        textStyle: { color: '#94a3b8', fontSize: 11 },
-        data: ['K线', 'MA365', 'RSI(14)', '恐惧贪婪'],
-      },
-      axisPointer: {
-        link: [{ xAxisIndex: [0, 1, 2] }],
-        label: { backgroundColor: '#2a3347' },
-      },
-      grid: [
-        { left: 52, right: 52, top: '10%', height: '50%' },
-        { left: 52, right: 52, top: '63%', height: '12%' },
-        { left: 52, right: 52, top: '77%', height: '12%' },
-      ],
-      xAxis,
-      yAxis: [
-        {
-          gridIndex: 0,
-          scale: true,
-          splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
-          axisLabel: { color: '#64748b', fontSize: 10 },
-        },
-        {
-          gridIndex: 1,
-          min: 0,
-          max: 100,
-          splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
-          axisLabel: { color: '#64748b', fontSize: 10 },
-        },
-        {
-          gridIndex: 2,
-          min: 0,
-          max: 100,
-          splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
-          axisLabel: { color: '#64748b', fontSize: 10 },
-          name: '恐惧贪婪',
-          nameTextStyle: { color: '#64748b', fontSize: 10 },
-        },
-      ],
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: [0, 1, 2],
-          start: 72,
-          end: 100,
-        },
-        {
-          type: 'slider',
-          xAxisIndex: [0, 1, 2],
-          bottom: 6,
-          height: 18,
-          borderColor: 'rgba(255,255,255,0.08)',
-          fillerColor: 'rgba(247,147,26,0.15)',
-          handleStyle: { color: '#f7931a' },
-          textStyle: { color: '#64748b', fontSize: 10 },
-        },
-      ],
-      series: [
-        {
-          name: 'K线',
-          type: 'candlestick',
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: ohlc,
-          itemStyle: {
-            color: '#26a69a',
-            color0: '#ef5350',
-            borderColor: '#26a69a',
-            borderColor0: '#ef5350',
-          },
-        },
-        {
-          name: 'MA365',
-          type: 'line',
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: ma365,
-          showSymbol: false,
-          lineStyle: { width: 1.4, color: '#f7931a' },
-          connectNulls: false,
-        },
-        {
-          name: '标注',
-          type: 'scatter',
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: [],
-          z: 10,
-        },
-        {
-          name: 'RSI(14)',
-          type: 'line',
-          xAxisIndex: 1,
-          yAxisIndex: 1,
-          data: rsi14,
-          showSymbol: false,
-          lineStyle: { width: 1.2, color: '#818cf8' },
-          markLine: {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { type: 'dashed', color: 'rgba(255,255,255,0.15)' },
-            data: [{ yAxis: 30 }, { yAxis: 70 }],
-          },
-        },
-        {
-          name: '恐惧贪婪',
-          type: 'line',
-          xAxisIndex: 2,
-          yAxisIndex: 2,
-          data: fngSeries,
-          showSymbol: false,
-          lineStyle: { width: 1.2, color: '#f472b6' },
-          areaStyle: { color: 'rgba(244,114,182,0.12)' },
-          connectNulls: true,
-        },
-      ],
-    };
-
-    chart.setOption(option);
-    buildMarkers();
-    window._chart = chart;
-    window._dates = dates;
-
-    chart.on('click', (p) => {
-      let idx = null;
-
-      if (p.seriesType === 'scatter' && p.seriesName === '标注' && p.data != null) {
-        // 点击红/绿标记点：从 value[0] 取日期字符串反查索引
-        const date = Array.isArray(p.data.value) ? p.data.value[0] : p.data.value;
-        idx = dates.indexOf(date);
-      } else if (p.seriesType === 'candlestick' && p.dataIndex != null) {
-        // 点击 K 线柱，仅当满足涨跌幅过滤条件时展示
-        const i = p.dataIndex;
-        if (i < 1) return;
-        const dp0 = pct(PRICE[i - 1].close, PRICE[i].close);
-        const { upOn, dnOn, up, dn } = getState();
-        if (!(upOn && up !== null && dp0 >= up) && !(dnOn && dn !== null && dp0 <= -dn)) return;
-        idx = i;
-      }
-
-      if (idx == null || idx < 1) return;
-      const c = PRICE[idx];
-      const prev = PRICE[idx - 1];
-      const dp = pct(prev.close, c.close);
-      showPanel(dates[idx], c, prev, dp);
-    });
-
-    new ResizeObserver(() => chart.resize()).observe(chartEl.parentElement);
+  chart.on('click', (p) => {
+    let idx = null;
+    if (p.seriesType==='scatter' && p.seriesName==='标注' && p.data!=null) {
+      const date = Array.isArray(p.data.value) ? p.data.value[0] : p.data.value;
+      idx = dates.indexOf(date);
+    } else if (p.seriesType==='candlestick' && p.dataIndex!=null) {
+      const i = p.dataIndex;
+      if (i < 1) return;
+      const dp0 = pct(PRICE[i-1].close, PRICE[i].close);
+      const { upOn, dnOn, up, dn } = getState();
+      if (!(upOn&&up!==null&&dp0>=up) && !(dnOn&&dn!==null&&dp0<=-dn)) return;
+      idx = i;
+    }
+    if (idx==null||idx<1) return;
+    const c=PRICE[idx], prev=PRICE[idx-1];
+    showPanel(dates[idx], c, prev, pct(prev.close,c.close));
   });
+
+  new ResizeObserver(() => chart.resize()).observe(chartEl.parentElement);
 });
 }).catch((e) => {
   console.error(e);
-  document.body.insertAdjacentHTML('afterbegin', '<div style="padding:16px;background:#3f1d1d;color:#fca5a5;font-family:sans-serif;">加载数据失败: ' + (e && e.message ? e.message : e) + '</div>');
+  document.body.insertAdjacentHTML('afterbegin','<div style="padding:16px;background:#3f1d1d;color:#fca5a5;font-family:sans-serif;">加载数据失败: '+(e&&e.message?e.message:e)+'</div>');
 });
 
 function applyFilter(){
   refreshStyle();
   if(window._buildMarkers) window._buildMarkers();
 }
-
 function setRange(days, btn) {
-  document.querySelectorAll('.rbtn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  if (!window._chart || !window._dates) return;
-  const total = window._dates.length;
-  const start = days === 0 ? 0 : Math.max(0, (1 - days / total) * 100);
-  window._chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: 0, start, end: 100 });
+  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(!window._chart||!window._dates) return;
+  const total=window._dates.length;
+  const start=days===0?0:Math.max(0,(1-days/total)*100);
+  window._chart.dispatchAction({type:'dataZoom',dataZoomIndex:0,start,end:100});
 }
-
 function applyCustomRange() {
-  const from = document.getElementById('rangeFrom').value;
-  const to   = document.getElementById('rangeTo').value;
-  if (!from || !to || !window._chart || !window._dates) return;
-  document.querySelectorAll('.rbtn').forEach(b => b.classList.remove('active'));
-  const total = window._dates.length;
-  let si = window._dates.findIndex(d => d >= from);
-  let ei = window._dates.findIndex(d => d > to);
-  if (si < 0) si = 0;
-  if (ei < 0) ei = total;
-  const start = (si / total) * 100;
-  const end   = Math.min(100, (ei / total) * 100);
-  window._chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: 0, start, end });
+  const from=document.getElementById('rangeFrom').value;
+  const to=document.getElementById('rangeTo').value;
+  if(!from||!to||!window._chart||!window._dates) return;
+  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('active'));
+  const total=window._dates.length;
+  let si=window._dates.findIndex(d=>d>=from);
+  let ei=window._dates.findIndex(d=>d>to);
+  if(si<0) si=0; if(ei<0) ei=total;
+  window._chart.dispatchAction({type:'dataZoom',dataZoomIndex:0,start:(si/total)*100,end:Math.min(100,(ei/total)*100)});
 }
 </script>
 </body>
